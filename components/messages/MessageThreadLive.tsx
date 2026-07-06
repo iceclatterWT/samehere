@@ -33,34 +33,51 @@ export default function MessageThreadLive({
   }, [initialMessages]);
 
   useEffect(() => {
-    const channel = supabase
-      .channel(`dm:${conversationId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        (payload) => {
-          const m = payload.new as {
-            id: string;
-            sender_id: string;
-            content: string;
-            created_at: string;
-          };
-          setMessages((prev) =>
-            prev.some((x) => x.id === m.id)
-              ? prev
-              : [...prev, { id: m.id, sender_id: m.sender_id, content: m.content, created_at: m.created_at, sender: null }],
-          );
-        },
-      )
-      .subscribe();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
+
+    (async () => {
+      // postgres_changes on an RLS-protected table only delivers rows the socket
+      // is authorized to read, so the realtime connection must carry the user's
+      // JWT — not the anon key. Set it explicitly before subscribing to avoid a
+      // race where the socket joins before the cookie session has hydrated
+      // (which silently yields zero events).
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (session?.access_token) supabase.realtime.setAuth(session.access_token);
+
+      channel = supabase
+        .channel(`dm:${conversationId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "messages",
+            filter: `conversation_id=eq.${conversationId}`,
+          },
+          (payload) => {
+            const m = payload.new as {
+              id: string;
+              sender_id: string;
+              content: string;
+              created_at: string;
+            };
+            setMessages((prev) =>
+              prev.some((x) => x.id === m.id)
+                ? prev
+                : [...prev, { id: m.id, sender_id: m.sender_id, content: m.content, created_at: m.created_at, sender: null }],
+            );
+          },
+        )
+        .subscribe();
+    })();
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
     };
   }, [supabase, conversationId]);
 

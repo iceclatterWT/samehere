@@ -20,11 +20,18 @@ export default function MessageThread({
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-5 sm:px-5">
-      {messages.map((m) => {
+    <div className="flex flex-col px-4 py-5 sm:px-5">
+      {messages.map((m, i) => {
         const mine = m.sender_id === viewerId;
+        // Only the last bubble in a run of same-sender messages gets a timestamp,
+        // so 5-in-a-row reads as one clean block with a single time underneath.
+        const next = messages[i + 1];
+        const endsRun = !next || next.sender_id !== m.sender_id;
         return (
-          <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+          <div
+            key={m.id}
+            className={`flex last:mb-0 ${mine ? "justify-end" : "justify-start"} ${endsRun ? "mb-4" : "mb-1"}`}
+          >
             <div className={`max-w-[min(82%,24rem)] ${mine ? "items-end" : "items-start"} flex flex-col`}>
               <div
                 className={`whitespace-pre-wrap break-words px-3.5 py-2.5 text-[15px] leading-relaxed ${
@@ -35,7 +42,9 @@ export default function MessageThread({
               >
                 {m.content}
               </div>
-              <MessageTime iso={m.created_at} className="mt-1 px-1 text-[11px] text-[var(--ink-faint)]" />
+              {endsRun && (
+                <MessageTime iso={m.created_at} className="mt-1 px-1 text-[11px] text-[var(--ink-faint)]" />
+              )}
             </div>
           </div>
         );
